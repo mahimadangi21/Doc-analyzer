@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+.env
+
+# Databases and runtime data
+*.db
+*.db-journal
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# IDEs and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Frontend build files
+dist/
+build/
+*.log
