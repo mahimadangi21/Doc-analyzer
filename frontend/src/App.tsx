@@ -6,7 +6,7 @@ export default function App() {
   const [applications, setApplications] = useState<ApplicationRow[]>([]);
   const [loanTypes, setLoanTypes] = useState<LoanType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'applications' | 'config'>('applications');
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'completed' | 'ops' | 'config'>('all');
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
@@ -17,12 +17,12 @@ export default function App() {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [editingAppId, setEditingAppId] = useState<number | null>(null);
 
-  // New Application Form State
+  // New Case Form State
   const [newApplicantName, setNewApplicantName] = useState("");
   const [newApplicantEmail, setNewApplicantEmail] = useState("");
   const [newLoanType, setNewLoanType] = useState<string>("");
 
-  // Loaded Application Details for Checklist
+  // Loaded Case Details for Checklist
   const [loadedDetail, setLoadedDetail] = useState<ApplicationDetail | null>(null);
   const [uploadProgressMap, setUploadProgressMap] = useState<Record<string, boolean>>({});
 
@@ -32,7 +32,7 @@ export default function App() {
   const fetchApplicationsList = () => {
     api.getApplications()
       .then(data => setApplications(data))
-      .catch(err => console.error("Error fetching applications:", err));
+      .catch(err => console.error("Error fetching cases:", err));
   };
 
   useEffect(() => {
@@ -99,7 +99,7 @@ export default function App() {
       const detail = await api.getApplicationDetail(newApp.application_id);
       setLoadedDetail(detail);
     } catch (err: any) {
-      alert("Failed to create application: " + err.message);
+      alert("Failed to create case: " + err.message);
     }
   };
 
@@ -154,8 +154,19 @@ export default function App() {
     const matchesSearch = app.full_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           app.application_id.toString().includes(searchQuery);
     const matchesLoan = selectedLoanFilter ? app.loan_type_code === selectedLoanFilter : true;
+    
+    // Status matching based on activeTab
+    let matchesTabStatus = true;
+    if (activeTab === 'pending') {
+      matchesTabStatus = app.status === 'DOCUMENTS_INCOMPLETE' || app.status === 'LOAN_RECEIVED';
+    } else if (activeTab === 'completed') {
+      matchesTabStatus = app.status === 'DOCUMENTS_COMPLETE';
+    } else if (activeTab === 'ops') {
+      matchesTabStatus = app.status === 'DOCUMENTS_INCOMPLETE';
+    }
+    
     const matchesStatus = selectedStatusFilter ? app.status === selectedStatusFilter : true;
-    return matchesSearch && matchesLoan && matchesStatus;
+    return matchesSearch && matchesLoan && matchesStatus && matchesTabStatus;
   });
 
   return (
@@ -166,7 +177,7 @@ export default function App() {
           <div className="logo-badge">U</div>
           <div className="logo-text-group">
             <span className="logo-title">UltraBanker</span>
-            <span className="logo-subtitle">Loan document review</span>
+            <span className="logo-subtitle">Case Management & Intake</span>
           </div>
         </div>
         <div className="top-bar-right">
@@ -183,15 +194,33 @@ export default function App() {
         <aside className="sidebar">
           <ul className="sidebar-menu">
             <li>
-              <a className={`nav-item ${activeTab === 'applications' ? 'active' : ''}`} onClick={() => setActiveTab('applications')}>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2" /></svg>
-                All applications
+              <a className={`nav-item ${activeTab === 'all' ? 'active' : ''}`} onClick={() => setActiveTab('all')}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+                All Cases
+              </a>
+            </li>
+            <li>
+              <a className={`nav-item ${activeTab === 'pending' ? 'active' : ''}`} onClick={() => setActiveTab('pending')}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                Pending Cases
+              </a>
+            </li>
+            <li>
+              <a className={`nav-item ${activeTab === 'completed' ? 'active' : ''}`} onClick={() => setActiveTab('completed')}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                Completed Cases
+              </a>
+            </li>
+            <li>
+              <a className={`nav-item ${activeTab === 'ops' ? 'active' : ''}`} onClick={() => setActiveTab('ops')}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10H7v-2h10v2z"/></svg>
+                Human Ops Queue
               </a>
             </li>
             <li>
               <a className={`nav-item ${activeTab === 'config' ? 'active' : ''}`} onClick={() => setActiveTab('config')}>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 17h6" /><path d="M9 12h6" /><path d="M9 7h6" /></svg>
-                Document config
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 17h6" /><path d="M9 12h6" /><path d="M9 7h6" /></svg>
+                Document Configuration
               </a>
             </li>
           </ul>
@@ -199,16 +228,21 @@ export default function App() {
 
         {/* Main Area */}
         <main className="main-content">
-          {activeTab === 'applications' ? (
+          {activeTab !== 'config' ? (
             <>
               <div className="content-header">
                 <div className="header-title-group">
-                  <h1 className="page-title">All applications</h1>
-                  <span className="page-subtitle">{filteredApps.length} applications found</span>
+                  <h1 className="page-title">
+                    {activeTab === 'all' && 'All Cases'}
+                    {activeTab === 'pending' && 'Pending Cases'}
+                    {activeTab === 'completed' && 'Completed Cases'}
+                    {activeTab === 'ops' && 'Human Ops Queue'}
+                  </h1>
+                  <span className="page-subtitle">{filteredApps.length} cases found</span>
                 </div>
                 <button className="btn btn-primary" onClick={handleOpenNewPanel}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                  New application
+                  Create Case
                 </button>
               </div>
 
@@ -245,18 +279,20 @@ export default function App() {
 
               {/* Table */}
               {loading ? (
-                <div>Loading applications...</div>
+                <div>Loading cases...</div>
               ) : (
                 <div className="table-card">
                   <table className="banker-table">
                     <thead>
                       <tr>
-                        <th>App ID</th>
-                        <th>Applicant</th>
-                        <th>Loan type</th>
+                        <th>Case ID</th>
+                        <th>Applicant Name</th>
+                        <th>Loan Type</th>
+                        <th>Assigned User</th>
+                        <th>Created Date</th>
                         <th>Status</th>
-                        <th>Assigned date</th>
-                        <th style={{ width: '40px' }}></th>
+                        <th>Missing Documents</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -265,13 +301,17 @@ export default function App() {
                           <td className="mono">#{app.application_id}</td>
                           <td style={{ fontWeight: 600 }}>{app.full_name}</td>
                           <td style={{ color: 'var(--text-muted)' }}>{app.loan_type}</td>
-                          <td>
-                            <span className={`status-pill ${app.status === 'DOCUMENTS_COMPLETE' ? 'complete' : 'incomplete'}`}>
-                              {app.status === 'DOCUMENTS_COMPLETE' ? 'Documents complete' : 'Needs documents'}
-                            </span>
-                          </td>
+                          <td style={{ color: 'var(--text-muted)' }}>{app.email.includes('alice') ? 'Alice Officer' : 'System Agent'}</td>
                           <td style={{ color: 'var(--text-muted)' }}>
                             {new Date(app.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </td>
+                          <td>
+                            <span className={`status-pill ${app.status === 'DOCUMENTS_COMPLETE' ? 'complete' : 'incomplete'}`}>
+                              {app.status === 'DOCUMENTS_COMPLETE' ? 'Completed' : 'Pending'}
+                            </span>
+                          </td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                            {app.missing_docs || 'None'}
                           </td>
                           <td>
                             <button className="kebab-button" onClick={(e) => {
@@ -334,7 +374,7 @@ export default function App() {
       {/* Slide-in Panel */}
       <div className={`slide-in-panel ${isPanelOpen ? 'open' : ''}`}>
         <div className="panel-header">
-          <h2 className="panel-title">{editingAppId ? "Application Details" : "New Application"}</h2>
+          <h2 className="panel-title">{editingAppId ? "Case Details" : "New Case"}</h2>
           <button className="panel-close-btn" onClick={handleClosePanel}>×</button>
         </div>
 
@@ -350,7 +390,7 @@ export default function App() {
             alignItems: 'center',
             gap: '8px'
           }}>
-            <span style={{ fontSize: '14px' }}>✓</span> Application submitted from customer side. Document uploads are locked.
+            <span style={{ fontSize: '14px' }}>✓</span> Case submitted. Document uploads are locked.
           </div>
         )}
 
@@ -398,7 +438,7 @@ export default function App() {
 
               {!editingAppId && (
                 <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '10px' }}>
-                  Create Application
+                  Create Case
                 </button>
               )}
             </form>
@@ -471,7 +511,7 @@ export default function App() {
         <div className="panel-footer">
           {editingAppId && loadedDetail && !loadedDetail.is_submitted && (
             <button className="btn btn-primary" onClick={handleSubmitApplication}>
-              Submit Application
+              Submit Case
             </button>
           )}
           <button className="btn btn-outline" onClick={handleClosePanel}>Close</button>

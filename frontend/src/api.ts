@@ -21,6 +21,7 @@ export interface ApplicationRow {
   email: string;
   loan_type: string;
   loan_type_code: string;
+  missing_docs?: string;
 }
 
 export interface ChecklistItem {

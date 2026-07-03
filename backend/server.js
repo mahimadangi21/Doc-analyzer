@@ -225,13 +225,25 @@ app.get('/applications', (req, res) => {
                 ap.full_name,
                 ap.email,
                 lt.display_name as loan_type,
-                lt.code as loan_type_code
+                lt.code as loan_type_code,
+                a.loan_type_id
             FROM applications a
             JOIN applicants ap ON a.applicant_id = ap.applicant_id
             JOIN loan_types lt ON a.loan_type_id = lt.loan_type_id
             ORDER BY a.application_id DESC
         `).all();
-        res.json(rows);
+        
+        const enhancedRows = rows.map(row => {
+            const required = db.prepare('SELECT document_type FROM required_documents WHERE loan_type_id = ?').all(row.loan_type_id).map(r => r.document_type);
+            const uploaded = db.prepare('SELECT DISTINCT document_type FROM uploaded_documents WHERE application_id = ?').all(row.application_id).map(r => r.document_type);
+            const missing = required.filter(doc => !uploaded.includes(doc));
+            return {
+                ...row,
+                missing_docs: missing.join(', ') || 'None'
+            };
+        });
+        
+        res.json(enhancedRows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
