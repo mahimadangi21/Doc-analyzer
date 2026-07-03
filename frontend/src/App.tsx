@@ -54,11 +54,16 @@ export default function App() {
     });
   }, []);
 
+  const [formErrors, setFormErrors] = useState<{name?: string, email?: string}>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleOpenNewPanel = () => {
     setEditingAppId(null);
     setLoadedDetail(null);
     setNewApplicantName("");
     setNewApplicantEmail("");
+    setFormErrors({});
+    setIsSubmitting(false);
     if (loanTypes.length > 0) {
       setNewLoanType(loanTypes[0].code);
     }
@@ -84,36 +89,68 @@ export default function App() {
 
   const handleCreateApplication = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newApplicantName || !newApplicantEmail || !newLoanType) return;
+    if (isSubmitting) return;
+
+    // Frontend Input Validation
+    const errors: {name?: string, email?: string} = {};
+    if (newApplicantName.trim().length < 2) {
+      errors.name = "Applicant Name must be at least 2 characters";
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newApplicantEmail.trim())) {
+      errors.email = "Please enter a valid email address";
+    }
+    
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+
+    setFormErrors({});
+    setIsSubmitting(true);
     try {
       const newApp = await api.createApplication({
-        full_name: newApplicantName,
-        email: newApplicantEmail,
+        full_name: newApplicantName.trim(),
+        email: newApplicantEmail.trim(),
         loan_type: newLoanType
       });
-      // Add directly to list
       setApplications(prev => [newApp, ...prev]);
       
-      // Pivot to edit mode so customer can upload files
       setEditingAppId(newApp.application_id);
       const detail = await api.getApplicationDetail(newApp.application_id);
       setLoadedDetail(detail);
     } catch (err: any) {
       alert("Failed to create case: " + err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleFileUpload = async (documentType: string, file: File) => {
     if (!editingAppId) return;
+
+    // Frontend File Validation
+    const allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    
+    if (!fileExtension || !allowedExtensions.includes(fileExtension)) {
+      alert("Unsupported file format. Only PDF, JPG, JPEG, and PNG formats are allowed");
+      return;
+    }
+
+    const maxSizeBytes = 15 * 1024 * 1024; // 15MB limit
+    if (file.size > maxSizeBytes) {
+      alert("File size exceeds the limit of 15MB");
+      return;
+    }
+
     setUploadProgressMap(prev => ({ ...prev, [documentType]: true }));
     try {
       await api.uploadDocument(editingAppId, documentType, file);
       
-      // Reload checklist details
       const detail = await api.getApplicationDetail(editingAppId);
       setLoadedDetail(detail);
       
-      // Refresh list to update status badge live behind panel
       fetchApplicationsList();
     } catch (err: any) {
       alert("Upload failed: " + err.message);
@@ -405,10 +442,17 @@ export default function App() {
                   type="text" 
                   required
                   disabled={editingAppId !== null}
-                  className="form-input" 
+                  className={`form-input ${formErrors.name ? 'error' : ''}`}
+                  style={formErrors.name ? { borderColor: 'red' } : {}}
                   value={newApplicantName}
-                  onChange={e => setNewApplicantName(e.target.value)}
+                  onChange={e => {
+                    setNewApplicantName(e.target.value);
+                    if (e.target.value.trim().length >= 2) {
+                      setFormErrors(prev => ({ ...prev, name: undefined }));
+                    }
+                  }}
                 />
+                {formErrors.name && <span style={{ color: 'red', fontSize: '11px', marginTop: '4px', display: 'block' }}>{formErrors.name}</span>}
               </div>
               <div className="form-group">
                 <label className="form-label">Email Address</label>
@@ -416,10 +460,18 @@ export default function App() {
                   type="email" 
                   required
                   disabled={editingAppId !== null}
-                  className="form-input" 
+                  className={`form-input ${formErrors.email ? 'error' : ''}`}
+                  style={formErrors.email ? { borderColor: 'red' } : {}}
                   value={newApplicantEmail}
-                  onChange={e => setNewApplicantEmail(e.target.value)}
+                  onChange={e => {
+                    setNewApplicantEmail(e.target.value);
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (emailRegex.test(e.target.value.trim())) {
+                      setFormErrors(prev => ({ ...prev, email: undefined }));
+                    }
+                  }}
                 />
+                {formErrors.email && <span style={{ color: 'red', fontSize: '11px', marginTop: '4px', display: 'block' }}>{formErrors.email}</span>}
               </div>
               <div className="form-group">
                 <label className="form-label">Loan Type</label>
@@ -437,8 +489,13 @@ export default function App() {
               </div>
 
               {!editingAppId && (
-                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '10px' }}>
-                  Create Case
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', marginTop: '10px' }}
+                  disabled={isSubmitting || newApplicantName.trim().length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newApplicantEmail.trim())}
+                >
+                  {isSubmitting ? "Creating..." : "Create Case"}
                 </button>
               )}
             </form>

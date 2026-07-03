@@ -290,9 +290,21 @@ app.get('/applications/:id', (req, res) => {
     }
 });
 
+// Security Helpers
+const sanitizeInput = (val) => {
+    if (typeof val !== 'string') return '';
+    return val.replace(/</g, "&lt;").replace(/>/g, "&gt;").trim();
+};
+
+const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+};
+
 app.post('/applications', (req, res) => {
     let { full_name, email, loan_type_id, loan_type } = req.body;
     
+    // 1. Resolve loan_type to ID
     if (!loan_type_id && loan_type) {
         const row = db.prepare('SELECT loan_type_id FROM loan_types WHERE code = ?').get(loan_type);
         if (row) {
@@ -300,11 +312,43 @@ app.post('/applications', (req, res) => {
         }
     }
 
+    // 2. Validate required fields
     if (!full_name || !email || !loan_type_id) {
-        return res.status(400).json({ error: 'Missing required fields' });
+        return res.status(400).json({ error: 'Missing required fields (full_name, email, loan_type)' });
+    }
+
+    // Sanitization & Formatting
+    full_name = sanitizeInput(full_name);
+    email = sanitizeInput(email).toLowerCase();
+
+    // 3. Email format validation
+    if (!validateEmail(email)) {
+        return res.status(400).json({ error: 'Invalid email address format' });
+    }
+
+    // 4. Validate full name length
+    if (full_name.length < 2 || full_name.length > 100) {
+        return res.status(400).json({ error: 'Applicant Name must be between 2 and 100 characters' });
+    }
+
+    // 5. Predefined value checks (check if loan type is supported)
+    const validLoan = db.prepare('SELECT 1 FROM loan_types WHERE loan_type_id = ?').get(loan_type_id);
+    if (!validLoan) {
+        return res.status(400).json({ error: 'Invalid or unsupported loan type selected' });
     }
 
     try {
+        // 6. Prevent duplicate active submissions
+        const duplicate = db.prepare(`
+            SELECT 1 FROM applications a
+            JOIN applicants ap ON a.applicant_id = ap.applicant_id
+            WHERE ap.email = ? AND a.loan_type_id = ? AND a.status != 'DOCUMENTS_COMPLETE'
+        `).get(email, loan_type_id);
+        
+        if (duplicate) {
+            return res.status(400).json({ error: 'An active case with this email and loan type already exists' });
+        }
+
         const insertApplicant = db.prepare('INSERT INTO applicants (full_name, email) VALUES (?, ?)');
         const insertApplication = db.prepare('INSERT INTO applications (applicant_id, loan_type_id, status) VALUES (?, ?, ?)');
         
@@ -345,17 +389,55 @@ app.post('/applications/:id/documents', upload.single('file'), (req, res) => {
     const { id } = req.params;
     const { document_type } = req.body;
     
+    // 1. Required fields
     if (!req.file || !document_type) {
+        if (req.file) {
+            // Cleanup the uploaded file if document_type is missing
+            try { fs.unlinkSync(req.file.path); } catch (e) {}
+        }
         return res.status(400).json({ error: 'File and document_type are required' });
     }
 
+    // 2. Validate application ID
+    const application = db.prepare('SELECT loan_type_id FROM applications WHERE application_id = ?').get(id);
+    if (!application) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+        return res.status(404).json({ error: 'Case application not found' });
+    }
+
+    // 3. Predefined document type validation
+    const validDoc = db.prepare('SELECT 1 FROM required_documents WHERE loan_type_id = ? AND document_type = ?').get(application.loan_type_id, document_type);
+    if (!validDoc) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+        return res.status(400).json({ error: `Unsupported or invalid document type for this case: ${document_type}` });
+    }
+
+    // 4. File extension and MIME type validation
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+    const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    const fileExtension = path.extname(req.file.originalname).toLowerCase();
+    
+    if (!allowedExtensions.includes(fileExtension) || !allowedMimeTypes.includes(req.file.mimetype)) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+        return res.status(400).json({ error: 'Unsupported file format. Only PDF, JPG, JPEG, and PNG formats are allowed' });
+    }
+
+    // 5. File size limits (Max 15MB)
+    const maxSizeBytes = 15 * 1024 * 1024;
+    if (req.file.size > maxSizeBytes) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+        return res.status(400).json({ error: 'File size exceeds the limit of 15MB' });
+    }
+
     try {
+        // Sanitize original filename (preventing directory traversal / malformed strings)
+        const sanitizedFilename = req.file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
         const file_url = `http://localhost:${PORT}/uploads/${req.file.filename}`;
         
         db.prepare(`
             INSERT INTO uploaded_documents (application_id, document_type, file_name, file_url)
             VALUES (?, ?, ?, ?)
-        `).run(id, document_type, req.file.originalname, file_url);
+        `).run(id, document_type, sanitizedFilename, file_url);
 
         // Recompute status
         const status = computeApplicationStatus(id);
