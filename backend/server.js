@@ -297,13 +297,25 @@ const sanitizeInput = (val) => {
 };
 
 const validateEmail = (email) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // RFC-compliant email regex
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (email.split('@').length !== 2) return false;
     return emailRegex.test(email);
+};
+
+const validateName = (name) => {
+    // Letters and spaces only
+    const nameRegex = /^[a-zA-Z\s]+$/;
+    return nameRegex.test(name);
 };
 
 app.post('/applications', (req, res) => {
     let { full_name, email, loan_type_id, loan_type } = req.body;
     
+    // Trim spaces before check
+    full_name = typeof full_name === 'string' ? full_name.trim() : '';
+    email = typeof email === 'string' ? email.trim() : '';
+
     // 1. Resolve loan_type to ID
     if (!loan_type_id && loan_type) {
         const row = db.prepare('SELECT loan_type_id FROM loan_types WHERE code = ?').get(loan_type);
@@ -314,7 +326,7 @@ app.post('/applications', (req, res) => {
 
     // 2. Validate required fields
     if (!full_name || !email || !loan_type_id) {
-        return res.status(400).json({ error: 'Missing required fields (full_name, email, loan_type)' });
+        return res.status(400).json({ error: 'Full Name, Email Address, and Loan Type are mandatory' });
     }
 
     // Sanitization & Formatting
@@ -323,22 +335,27 @@ app.post('/applications', (req, res) => {
 
     // 3. Email format validation
     if (!validateEmail(email)) {
-        return res.status(400).json({ error: 'Invalid email address format' });
+        return res.status(400).json({ error: 'Please enter a valid RFC-compliant email address (e.g. user@example.com)' });
     }
 
-    // 4. Validate full name length
+    // 4. Validate full name structure (letters and spaces only)
+    if (!validateName(full_name)) {
+        return res.status(400).json({ error: 'Full Name must contain only letters and spaces (no numbers or special characters)' });
+    }
+
+    // 5. Validate full name length
     if (full_name.length < 2 || full_name.length > 100) {
-        return res.status(400).json({ error: 'Applicant Name must be between 2 and 100 characters' });
+        return res.status(400).json({ error: 'Full Name must be between 2 and 100 characters' });
     }
 
-    // 5. Predefined value checks (check if loan type is supported)
+    // 6. Predefined value checks (check if loan type is supported)
     const validLoan = db.prepare('SELECT 1 FROM loan_types WHERE loan_type_id = ?').get(loan_type_id);
     if (!validLoan) {
-        return res.status(400).json({ error: 'Invalid or unsupported loan type selected' });
+        return res.status(400).json({ error: 'Selected loan type is invalid or unsupported' });
     }
 
     try {
-        // 6. Prevent duplicate active submissions
+        // 7. Prevent duplicate active submissions
         const duplicate = db.prepare(`
             SELECT 1 FROM applications a
             JOIN applicants ap ON a.applicant_id = ap.applicant_id
@@ -346,7 +363,7 @@ app.post('/applications', (req, res) => {
         `).get(email, loan_type_id);
         
         if (duplicate) {
-            return res.status(400).json({ error: 'An active case with this email and loan type already exists' });
+            return res.status(400).json({ error: 'An active case already exists for this email address and loan type' });
         }
 
         const insertApplicant = db.prepare('INSERT INTO applicants (full_name, email) VALUES (?, ?)');

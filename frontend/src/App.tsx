@@ -93,12 +93,18 @@ export default function App() {
 
     // Frontend Input Validation
     const errors: {name?: string, email?: string} = {};
-    if (newApplicantName.trim().length < 2) {
-      errors.name = "Applicant Name must be at least 2 characters";
+    const nameTrimmed = newApplicantName.trim();
+    const emailTrimmed = newApplicantEmail.trim();
+
+    if (nameTrimmed.length < 2 || nameTrimmed.length > 100) {
+      errors.name = "Full Name must be between 2 and 100 characters";
+    } else if (!/^[a-zA-Z\s]+$/.test(nameTrimmed)) {
+      errors.name = "Full Name must contain only letters and spaces (no numbers or special characters)";
     }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newApplicantEmail.trim())) {
-      errors.email = "Please enter a valid email address";
+
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (emailTrimmed.split('@').length !== 2 || !emailRegex.test(emailTrimmed)) {
+      errors.email = "Please enter a valid RFC-compliant email address (e.g. user@example.com)";
     }
     
     if (Object.keys(errors).length > 0) {
@@ -110,8 +116,8 @@ export default function App() {
     setIsSubmitting(true);
     try {
       const newApp = await api.createApplication({
-        full_name: newApplicantName.trim(),
-        email: newApplicantEmail.trim(),
+        full_name: nameTrimmed,
+        email: emailTrimmed,
         loan_type: newLoanType
       });
       setApplications(prev => [newApp, ...prev]);
@@ -493,7 +499,15 @@ export default function App() {
                   type="submit" 
                   className="btn btn-primary" 
                   style={{ width: '100%', marginTop: '10px' }}
-                  disabled={isSubmitting || newApplicantName.trim().length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newApplicantEmail.trim())}
+                  disabled={
+                    isSubmitting || 
+                    newApplicantName.trim().length < 2 || 
+                    newApplicantName.trim().length > 100 ||
+                    !/^[a-zA-Z\s]+$/.test(newApplicantName.trim()) ||
+                    newApplicantEmail.trim().split('@').length !== 2 ||
+                    !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(newApplicantEmail.trim()) ||
+                    newLoanType === ""
+                  }
                 >
                   {isSubmitting ? "Creating..." : "Create Case"}
                 </button>
